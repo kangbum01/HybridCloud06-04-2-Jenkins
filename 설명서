@@ -1,0 +1,6 @@
+1. cd ./project/Beat/actions-runner
+2. ./run.sh # Github의 Action을 실행하는 스크립트
+3. cd ./project/Beat/terraform/envs/dev
+4. terraform fmt && terraform init && terraform validate
+5. terraform plan && terraform apply
+6. git push 해보기 

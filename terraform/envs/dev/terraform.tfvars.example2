@@ -1,0 +1,68 @@
+########################
+# 필수 변수
+########################
+
+variable "region" {
+  type        = string
+  description = "AWS Region (예: ap-northeast-2)"
+
+  validation {
+    condition     = length(trim(var.region)) > 0
+    error_message = "region은 반드시 terraform.tfvars에 입력해야 합니다."
+  }
+}
+
+variable "project" {
+  type        = string
+  description = "프로젝트 이름 (리소스 이름 prefix)"
+
+  validation {
+    condition     = length(trim(var.project)) > 0
+    error_message = "project는 반드시 입력해야 합니다."
+  }
+}
+
+variable "env" {
+  type        = string
+  description = "환경 이름 (dev, prod 등)"
+
+  validation {
+    condition     = contains(["dev", "prod"], var.env)
+    error_message = "env는 dev 또는 prod 중 하나여야 합니다."
+  }
+}
+
+variable "vpc_cidr" {
+  type        = string
+  description = "VPC CIDR"
+}
+
+variable "public_azs" {
+  type        = list(string)
+  description = "Public Subnet AZ 목록"
+}
+
+variable "public_subnets" {
+  type        = list(string)
+  description = "Public Subnet CIDR 목록"
+}
+
+variable "private_azs" {
+  type        = list(string)
+  description = "Private Subnet AZ 목록"
+}
+
+variable "private_subnets" {
+  type        = list(string)
+  description = "Private Subnet CIDR 목록"
+}
+
+########################
+# 옵션 변수
+########################
+
+variable "tags" {
+  type        = map(string)
+  description = "공통 태그"
+  default     = {}
+}

@@ -1,0 +1,137 @@
+jenkins:
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "{{ admin_id }}"
+          password: "{{ admin_pw }}"
+
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+unclassified:
+  location:
+    url: "http://{{ ansible_host }}:8080/"
+
+jobs:
+  - script: |
+      pipelineJob('{{ jenkins_job_name }}') {
+        definition {
+          cps {
+            script('''
+              pipeline {
+                agent any
+
+                environment {
+                  // ✅ Jinja2가 "생성 시점"에 값 주입
+                  GIT_REPO_URL   = "{{ git_repo_url }}"
+                  AWS_REGION     = "{{ aws_region }}"
+                  AWS_ACCOUNT_ID = "{{ aws_account_id }}"
+                  ECR_REPO       = "{{ ecr_repo }}"
+                  AWS_CRED_ID    = "{{ aws_cred_id }}"
+
+                  TASK_FAMILY    = "{{ task_family }}"
+                  ECS_CLUSTER    = "{{ ecs_cluster }}"
+                  ECS_SERVICE    = "{{ ecs_service }}"
+                }
+
+                stages {
+
+                  stage('Checkout') {
+                    steps {
+                      git url: "${GIT_REPO_URL}"
+                    }
+                  }
+
+                  stage('Build Docker Image') {
+                    steps {
+                      sh '''
+                        set -euo pipefail
+                        IMAGE_TAG=${BUILD_NUMBER}
+                        docker build -t ${ECR_REPO}:${IMAGE_TAG} .
+                      '''
+                    }
+                  }
+
+                  stage('Push to ECR') {
+                    steps {
+                      withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: "${AWS_CRED_ID}"
+                      ]]) {
+                        sh '''
+                          set -euo pipefail
+                          IMAGE_TAG=${BUILD_NUMBER}
+
+                          aws ecr get-login-password --region ${AWS_REGION} \
+                            | docker login --username AWS --password-stdin \
+                              ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+
+                          docker tag ${ECR_REPO}:${IMAGE_TAG} \
+                            ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}
+
+                          docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}
+                        '''
+                      }
+                    }
+                  }
+
+                  stage('Deploy to ECS') {
+                    steps {
+                      withCredentials([[
+                        $class: 'AmazonWebServicesCredentialsBinding',
+                        credentialsId: "${AWS_CRED_ID}"
+                      ]]) {
+                        sh '''
+                          set -euo pipefail
+                          IMAGE_TAG=${BUILD_NUMBER}
+                          NEW_IMAGE="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${ECR_REPO}:${IMAGE_TAG}"
+
+                          aws ecs describe-task-definition \
+                            --task-definition ${TASK_FAMILY} \
+                            --region ${AWS_REGION} > td.json
+
+                          jq --arg IMG "$NEW_IMAGE" '
+                            .taskDefinition
+                            | del(
+                                .taskDefinitionArn,
+                                .revision,
+                                .status,
+                                .requiresAttributes,
+                                .compatibilities,
+                                .registeredAt,
+                                .registeredBy
+                              )
+                            | .containerDefinitions |= map(
+                                if .name == "web"
+                                then .image = $IMG
+                                else .
+                                end
+                              )
+                          ' td.json > td-new.json
+
+                          aws ecs register-task-definition \
+                            --region ${AWS_REGION} \
+                            --cli-input-json file://td-new.json > td-registered.json
+
+                          NEW_TD_ARN=$(jq -r '.taskDefinition.taskDefinitionArn' td-registered.json)
+
+                          aws ecs update-service \
+                            --cluster ${ECS_CLUSTER} \
+                            --service ${ECS_SERVICE} \
+                            --task-definition "$NEW_TD_ARN" \
+                            --force-new-deployment \
+                            --region ${AWS_REGION}
+                        '''
+                      }
+                    }
+                  }
+
+                }
+              }
+            '''.stripIndent())
+            sandbox(true)
+          }
+        }
+      }

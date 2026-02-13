@@ -1,0 +1,27 @@
+---
+ansible_user: ansible-admin
+
+# 권한
+jenkins_uid: "1000"
+target_gid: "1002"
+
+# 공통 베이스 경로 (하나로 통일)
+ansible_admin_dir: "/home/ansible-admin"
+project_dir: "{{ ansible_admin_dir }}/project"
+
+# 여기에는 web 세팅 깃 넣어놓기
+git_repo_url: ""
+
+# Jenkins 계정/접속
+admin_id: "bumseok"
+admin_pw: "1234"
+
+# Jenkins 데이터 경로
+jenkins_home: "/home/ansible-admin/jenkins_home"
+
+# Job 이름
+jenkins_job_name: "Music-Service-Deploy"
+
+# 커스텀 Jenkins 이미지 빌드 경로 (Dockerfile/플러그인 포함 위치)
+custom_jenkins_build_path: "{{ project_dir }}/Beat/docker"
+# ↑ 여기만 너 실제 구조에 맞게 조정 필요

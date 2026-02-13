@@ -1,0 +1,123 @@
+---
+
+####################################################################
+# 0. 시스템 기본 설정
+####################################################################
+- name: "0-1. SELinux Permissive 설정 (컨테이너 마운트 안정화)"
+  ansible.posix.selinux:
+    policy: targeted
+    state: permissive
+  become: true
+
+- name: "0-2. ACL 패키지 설치 (docker.sock ACL 필요)"
+  ansible.builtin.dnf:
+    name: acl
+    state: present
+  become: true
+
+- name: "0-3. Docker 서비스 시작 및 활성화"
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+  become: true
+
+- name: "0-4. Docker 소켓 권한 부여 (Jenkins UID {{ jenkins_uid }} 접근 허용)"
+  block:
+    - name: "Docker 소켓 파일 존재 확인"
+      ansible.builtin.stat:
+        path: /var/run/docker.sock
+      register: docker_sock
+
+    - name: "Docker 소켓에 Jenkins UID ACL 부여 (rw) - setfacl"
+      ansible.builtin.command: "setfacl -m u:{{ jenkins_uid }}:rw /var/run/docker.sock"
+      when: docker_sock.stat.exists
+      changed_when: true
+      
+  become: true
+
+
+####################################################################
+# 1. Jenkins 관련 디렉토리 준비 (UID 1000 기준)
+####################################################################
+- name: "1. Jenkins 필수 디렉토리 생성"
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ jenkins_uid }}" # 1000
+    group: "{{ target_gid }}"  # 1002
+    mode: "{{ item.mode }}"
+    recurse: no
+  loop:
+    - { path: "{{ jenkins_home }}/casc_configs", mode: "2775" }
+    - { path: "{{ jenkins_home }}/init.groovy.d", mode: "2775" }
+    - { path: "{{ project_dir }}/logs", mode: "2775" }
+  become: true
+
+- name: "2. 호스토용 Jenkins 심볼릭 링크 생성 (컨테이너 경로와 일치화)"
+  ansible.builtin.file:
+    src: "{{ jenkins_home }}"
+    dest: "/var/jenkins_home"
+    state: link
+    force: yes
+  become: true
+
+
+# ==============================================================================
+# 3. 젠킨스 초기 기동 설정
+# ==============================================================================
+
+- name: "임시 CasC 배치"
+  copy:
+    content: "jenkins: {}"
+    dest: "{{ jenkins_home }}/casc_configs/jenkins.yaml"
+    owner: "1000"
+    mode: "0664"
+  become: true
+
+- name: "Jenkins 커스텀 이미지 빌드 (custom-jenkins:latest)"
+  ansible.builtin.command:
+    cmd: docker build -t custom-jenkins:latest "{{ custom_jenkins_build_path }}"
+  become: true
+
+
+- name: "Jenkins 컨테이너 기동"
+  community.docker.docker_container:
+    name: jenkins-server
+    image: custom-jenkins:latest
+    state: started
+    restart_policy: always
+    network_mode: "host"
+    # ports:
+    #   - "8080:8080"
+    env:
+      CASC_JENKINS_CONFIG: "/var/jenkins_home/casc_configs/jenkins.yaml"
+      JENKINS_ADMIN_ID: "{{ admin_id }}"
+      JENKINS_ADMIN_PW: "{{ admin_pw }}"
+      JAVA_OPTS: "-Djenkins.install.runSetupWizard=false"
+    volumes:
+      - "{{ jenkins_home }}:/var/jenkins_home:Z"
+      - "/var/run/docker.sock:/var/run/docker.sock"
+    docker_host: "unix:///var/run/docker.sock"
+  environment:
+    DOCKER_HOST: "unix:///var/run/docker.sock"
+  become: true
+
+####################################################################
+# 4. 최종 CasC 반영 (Job 생성까지 하려면 필요)
+####################################################################
+- name: "4-1. 최종 Jenkins CasC 반영"
+  ansible.builtin.template:
+    src: jenkins.yaml.j2
+    dest: "{{ jenkins_home }}/casc_configs/jenkins.yaml"
+    owner: "{{ jenkins_uid }}"
+    mode: "0664"
+  become: true
+
+- name: "4-2. Jenkins 재시작"
+  community.docker.docker_container:
+    name: jenkins-server
+    state: started
+    restart: true
+  become: true
+    # terraform state 공유가 안되면 문제 발생 가능

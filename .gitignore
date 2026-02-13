@@ -1,0 +1,32 @@
+# Terraform
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+crash.log
+crash.*.log
+*.tfplan
+*.tfplan.*
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# tfvars (secrets)
+terraform.tfvars
+*.tfvars
+*.tfvars.json
+
+# Terragrunt (if used)
+.terragrunt-cache/
+
+# Ansible
+*.retry
+
+# Editor / OS
+.DS_Store
+.vscode/
+*~
+*.swp
+*.swo

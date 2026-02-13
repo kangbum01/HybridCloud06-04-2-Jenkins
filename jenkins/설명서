@@ -1,0 +1,25 @@
+0. ssh 키 10.4.4.11, 12 , 13 , 10.4.3.10에 배포하기, .ssh에 있는 jenkins 키 삭제하기
+1. requirements.yml 읽기
+2. ssh-key, jenkins-key 생성 및 배포
+2-1. jenkins_home 변수 위치에 폴더 미리 만들기
+2-2 jenkins-key의 경우 인이 설정한 inventory/group_var본s/cicd.yml 에 있는 jenkins_home 경로에 넣기
+2-3 jenkins-key.pub를 lb 서버에 배포하기
+# mkdir -p /home/ansible-admin/jenkins_home/.ssh
+# ssh-keygen -t rsa -b 4096 -N "" -f ~/home/ansible-admin/jenkins_home/.ssh jenkins_deploy
+# ssh-copy-id -u /home/ansible-admin/jenkins_home/.ssh/jenkins_deploy.pub ansible-admin@10.4.2.10
+
+3. 실행 코드
+; cd /home/ansible-admin/project/Beat
+; ansible-playbook -i inventory/hosts.ini playbooks/site.yml
+; 1) 시간 동기화
+; 2) DB 구성
+; 3) CICD 구성
+; 4) AI 구성
+; 5) LB 구성
+; 6) Monitoring 구성
+
+# jenkins 오류 해결 방법
+* script returned exit code 2 => ai 서버에서 git 파일이 안 온거임
+* scrpit returned exit code 1 => 문법 오류 ->  CICD/jenkins_setup/templates/jenkins.yaml.j2의 문법 확인
+* jenkins 무한 로딩 => 문법 오류 ->  CICD/jenkins_setup/templates/jenkins.yaml.j2의 문법 확인 { ''' ''' } { """ """ }
+

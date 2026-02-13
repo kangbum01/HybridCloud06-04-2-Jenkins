@@ -1,0 +1,40 @@
+# 파이프라인 스크립트에서 실행
+# ansible-galaxy collection install -r requirements.yml
+# 이거 먼저 실행하고 시작하기
+# 프로젝트 최상위 폴더에 생성
+# 완료 후 나한태도 키 배포하기
+# cat ~/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+# chmod 700 ~/.ssh
+# chmod 600 ~/.ssh/authorized_keys
+
+# # 프로젝트 최상위의 requirements.yml
+# collections:
+# # MySQL 관리용
+#   - name: https://github.com/ansible-collections/community.mysql.git
+#     type: git
+#     version: 3.10.0
+
+#   # 일반 리눅스 관리 도구
+#   - name: https://github.com/ansible-collections/community.general.git
+#     type: git
+#     version: 9.5.0
+
+#   # SELinux 등 시스템 설정용
+#   - name: https://github.com/ansible-collections/ansible.posix.git
+#     type: git
+#     version: 1.5.4
+
+#   # Docker 이미지 빌드 및 컨테이너 관리 (새로 추가!)
+#   - name: https://github.com/ansible-collections/community.docker.git
+#     type: git
+#     version: 3.10.0
+---
+collections:
+  - name: community.general
+    version: "9.1.0"
+
+  - name: ansible.posix
+    version: "1.5.4"
+
+  - name: community.docker
+    version: "3.10.0"
