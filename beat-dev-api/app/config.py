@@ -1,12 +1,16 @@
+# app/config.py
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-  model_config = SettingsConfigDict(env_file="env", extra="ignore")
+  model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-  # 이거 나중에 변경을 좀 해야하나?
-  AI_BASE_URL: str = "http://127/0.0.1:9000"
-  AI_AUTH_TOKEN: str = ""
-  CALLBACK_TOKEN: str = "change-me"
-  UPLOAD_DIR: str = "/tmp/uploads"
+  AWS_REGION: str = "ap-northeast-2"
+  S3_BUCKET: str
+
+  S3_UPLOAD_PREFIX: str = "uploads"
+  S3_RESULT_PREFIX: str = "results"
+  PRESIGN_EXPIRE_SECONDS: int = 3600
+
+  CALLBACK_TOKEN: str = "change-me"  # 테스트용 유지 옵션
 
 settings = Settings()

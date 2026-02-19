@@ -65,6 +65,8 @@ resource "aws_vpc_security_group_egress_rule" "ecs_out_all" {
   ip_protocol       = "-1"
 }
 
+
+
 # 2. TG 생성
 # * TG
 resource "aws_lb_target_group" "tg" {

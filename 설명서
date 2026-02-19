@@ -1,6 +1,7 @@
-1. cd ./project/Beat/actions-runner
+1. cd /home/ansible-admin/project/tools/actioni-runners
 2. ./run.sh # Github의 Action을 실행하는 스크립트
 3. cd ./project/Beat/terraform/envs/dev
 4. terraform fmt && terraform init && terraform validate
 5. terraform plan && terraform apply
 6. git push 해보기 
+7. sudo setfacl -m u:1000:rw /var/run/docker.sock 이거 입력하고 꼭 초기 세팅으로 설정하기

@@ -3,6 +3,9 @@
 # 2. ECS Log 수집
 # 3. ECS용 IAM(Role) 생성
 # 4. ECS Tasks 정의
+# 4.0 Service Discovery (Cloud Map)
+# 4-1. web
+# 4-2. was
 # 5. ECS  Service (ALB Target Group 연결)
 # 6. ECS HPA 생성
 ####################################
@@ -45,32 +48,88 @@ resource "aws_iam_role_policy_attachment" "task_execution_attach" {
 }
 
 # 4. ECS Tasks 정의
+# local 구성
 locals {
-  container_definitions = jsonencode([
+  web_container_definitions = jsonencode([
     {
-      name  =   var.container_name
-      image =   var.image
+      name      = var.web_container_name
+      image     = var.web_image
       essential = true
-      portMappings = [
+
+      portMappings = [{
+        containerPort = var.web_container_port
+        protocol      = "tcp"
+      }]
+
+      environment = [
         {
-          containerPort = var.container_port
-          protocol      = "tcp"
+          name = "WAS_BASE_URL"
+          value = "http://${var.was_sd_service_name}.${var.sd_namespace_name}:${var.was_container_port}"
         }
       ]
+
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          awslogs-group   = aws_cloudwatch_log_group.ecs_log_group.name
-          awslogs-region  = var.region
-          awslogs-stream-prefix = "ecs"
+          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "ecs-web"
+        }
+      }
+    }
+  ])
+
+  was_container_definitions = jsonencode([
+    {
+      name      = var.was_container_name
+      image     = var.was_image
+      essential = true
+      portMappings = [{
+        containerPort = var.was_container_port
+        protocol      = "tcp"
+      }]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.ecs_log_group.name
+          awslogs-region        = var.region
+          awslogs-stream-prefix = "ecs-was"
         }
       }
     }
   ])
 }
 
+############################
+# 4.0 Service Discovery (Cloud Map)
+############################
+resource "aws_service_discovery_private_dns_namespace" "sd_ns" {
+  name = var.sd_namespace_name   # 예: "beat-dev.local"
+  vpc  = var.vpc_id
+}
+
+resource "aws_service_discovery_service" "sd_was" {
+  name = var.was_sd_service_name
+
+  dns_config {
+    namespace_id = aws_service_discovery_private_dns_namespace.sd_ns.id
+
+    dns_records {
+      type = "A"
+      ttl  = 10
+    }
+
+    routing_policy = "MULTIVALUE"
+  }
+
+  health_check_custom_config {
+    failure_threshold = 1
+  }
+}
+
+# 4-1. web
 resource "aws_ecs_task_definition" "ecs_definition" {
-  family           = "${var.name}-task"
+  family           = "${var.name}-web-task"
   network_mode     = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu               = tostring(var.cpu)
@@ -78,8 +137,22 @@ resource "aws_ecs_task_definition" "ecs_definition" {
 
   execution_role_arn = aws_iam_role.task_execution.arn
 
-  container_definitions = local.container_definitions
+  container_definitions = local.web_container_definitions
 }
+
+# 4-2 was
+resource "aws_ecs_task_definition" "ecs_definition_was" {
+  family           = "${var.name}-was-task"
+  network_mode     = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu               = tostring(var.cpu)
+  memory            = tostring(var.memory)
+
+  execution_role_arn = aws_iam_role.task_execution.arn
+
+  container_definitions = local.was_container_definitions 
+}
+
 
 # 5. ECS  Service (ALB Target Group 연결)
 resource "aws_ecs_service" "ecs_service" {
@@ -97,17 +170,48 @@ resource "aws_ecs_service" "ecs_service" {
 
   load_balancer {
     target_group_arn = var.target_group_arn
-    container_name   = var.container_name
-    container_port   = var.container_port
+    container_name   = var.web_container_name
+    container_port   = var.web_container_port
   }
 }
+
+resource "aws_ecs_service" "ecs_service_was" {
+  name        = "${var.name}-was-service"
+  cluster     = aws_ecs_cluster.ecs_cluster.id
+  task_definition = aws_ecs_task_definition.ecs_definition_was.arn
+  desired_count   = var.was_desired_count
+  launch_type  = "FARGATE"
+
+  # sg는 alb에서 만든 sg 가져오기
+  network_configuration {
+    subnets     = var.private_subnet_ids
+    security_groups = [var.ecs_service_sg_id]
+    assign_public_ip = false
+  }
+
+  service_registries {
+    registry_arn = aws_service_discovery_service.sd_was.arn
+  }
+  
+}
+
+# web/was 둘 다 같은 SG를 사용하고 있기 때문에 자기 자신 SG를 열어줘야 한다
+# was 포트는 ecs에서 관리하는 것이 좀 더 좋다
+resource "aws_vpc_security_group_ingress_rule" "ecs_allow_was_from_self" {
+  security_group_id = var.ecs_service_sg_id
+  referenced_security_group_id = var.ecs_service_sg_id
+  from_port = var.was_container_port
+  to_port = var.was_container_port
+  ip_protocol = "tcp"
+}
+
 
 # 6. ECS HPA 생성
 # Autoscaling Target
 resource "aws_appautoscaling_target" "ecs_hpa" {
   depends_on = [aws_ecs_service.ecs_service]
-  min_capacity    = 2
-  max_capacity    = 4
+  min_capacity    = var.web_min_capacity
+  max_capacity    = var.web_max_capacity
   service_namespace   = "ecs"
   scalable_dimension  = "ecs:service:DesiredCount"
 
@@ -170,3 +274,60 @@ resource "aws_appautoscaling_policy" "alb_rps_target_tracking" {
     }
   }
 }
+
+
+####################################
+# WAS HPA
+####################################
+
+# WAS Autoscaling Target
+resource "aws_appautoscaling_target" "ecs_hpa_was" {
+  depends_on         = [aws_ecs_service.ecs_service_was]
+  min_capacity       = var.was_min_capacity
+  max_capacity       = var.was_max_capacity
+  service_namespace  = "ecs"
+  scalable_dimension = "ecs:service:DesiredCount"
+
+  resource_id = "service/${aws_ecs_cluster.ecs_cluster.name}/${aws_ecs_service.ecs_service_was.name}"
+}
+
+# WAS Policy 1. CPU Target Tracking
+resource "aws_appautoscaling_policy" "cpu_target_tracking_was" {
+  name               = "${var.name}-was-cpu-tt"
+  policy_type        = "TargetTrackingScaling"
+  service_namespace  = aws_appautoscaling_target.ecs_hpa_was.service_namespace
+  scalable_dimension = aws_appautoscaling_target.ecs_hpa_was.scalable_dimension
+  resource_id        = aws_appautoscaling_target.ecs_hpa_was.resource_id
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = var.was_cpu_target
+    scale_out_cooldown = 60
+    scale_in_cooldown  = 120
+
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+  }
+}
+
+# WAS Policy 2. Memory Target Tracking
+resource "aws_appautoscaling_policy" "mem_target_tracking_was" {
+  name               = "${var.name}-was-mem-tt"
+  policy_type        = "TargetTrackingScaling"
+  service_namespace  = aws_appautoscaling_target.ecs_hpa_was.service_namespace
+  scalable_dimension = aws_appautoscaling_target.ecs_hpa_was.scalable_dimension
+  resource_id        = aws_appautoscaling_target.ecs_hpa_was.resource_id
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = var.was_mem_target
+    scale_out_cooldown = 60
+    scale_in_cooldown  = 120
+
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+    }
+  }
+}
+
+
+

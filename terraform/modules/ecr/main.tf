@@ -2,9 +2,10 @@
 # 1. ECR Repository 생성
 ####################################
 
-# 1. ECR Repository 생성
-resource "aws_ecr_repository" "ecr_repository" {
-  name                 = var.ecr_repository_name
+# 1. Web, Was ECR Repository 생성
+resource "aws_ecr_repository" "this" {
+  for_each             = var.repositories
+  name                 = "${var.name}-${each.key}"
   image_tag_mutability = "MUTABLE"
 
   image_scanning_configuration {
@@ -12,10 +13,12 @@ resource "aws_ecr_repository" "ecr_repository" {
   }
 }
 
-
-# (선택) 오래된 이미지 정리 정책
-resource "aws_ecr_lifecycle_policy" "ecr_lifecycle" {
-  repository = aws_ecr_repository.ecr_repository.name
+####################################
+# 2. ECR Lifecycle Policy (오래된 이미지 정리)
+####################################
+resource "aws_ecr_lifecycle_policy" "this" {
+  for_each   = aws_ecr_repository.this
+  repository = each.value.name
 
   policy = jsonencode({
     rules = [{
@@ -24,7 +27,7 @@ resource "aws_ecr_lifecycle_policy" "ecr_lifecycle" {
       selection = {
         tagStatus   = "any"
         countType   = "imageCountMoreThan"
-        countNumber = 10
+        countNumber = 20
       }
       action = { type = "expire" }
     }]

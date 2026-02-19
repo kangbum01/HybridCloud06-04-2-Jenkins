@@ -15,18 +15,33 @@ variable "log_retention_days" {
   type = number
 }
 
-variable "container_name" {
-  description = "ECS Container Name"
+variable "web_image" {
+  description = "ECR Image name - web"
   type = string
 }
 
-variable "image" {
-  description = "ECR Image name"
+variable "was_image" {
+  description = "ECR Image name - was"
   type = string
 }
 
-variable "container_port"{
-  description = "ECS Task container port"
+variable "was_container_name" {
+  description = "ECS Container Name - was"
+  type = string
+}
+
+variable "web_container_name" {
+  description = "ECS Container Name - web"
+  type = string
+}
+
+variable "web_container_port"{
+  description = "ECS Task container port - web(8080)"
+  type = number
+}
+
+variable "was_container_port"{
+  description = "ECS Task container port - was(80)"
   type = number
 }
 
@@ -50,6 +65,36 @@ variable "desired_count" {
   type = number
 }
 
+variable "was_min_capacity" { 
+  type = number 
+}
+
+variable "was_max_capacity" { 
+  type = number 
+}
+
+variable "was_cpu_target" { 
+  type = number 
+}  
+variable "was_mem_target" { 
+  type = number 
+}
+
+variable "was_desired_count" {
+  type = number
+}
+
+variable "web_max_capacity" {
+  type = number
+}
+
+variable "web_min_capacity" {
+  type = number
+}
+
+
+
+
 variable "private_subnet_ids" {
   description = "private subnets"
   type = list(string)
@@ -70,3 +115,15 @@ variable "alb_arn" {
   type = string
 }
 
+variable "sd_namespace_name" {
+  description = "sd namespace" 
+  type = string
+}
+
+variable "vpc_id" {
+  type = string
+}
+
+variable "was_sd_service_name" {
+  type = string
+}

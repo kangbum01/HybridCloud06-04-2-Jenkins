@@ -1,0 +1,115 @@
+Resources:
+  DatadogTaskRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "datadog-task-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ecs-tasks.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Policies:
+        - PolicyName: "fargate-task-role-default-policy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "ecs:ListClusters"
+                  - "ecs:ListContainerInstances"
+                  - "ecs:DescribeContainerInstances"
+                Resource:
+                  - "*"
+  DatadogTaskExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: "datadog-task-execution-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "ecs-tasks.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: "datadog-secret-access"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "secretsmanager:GetSecretValue"
+                Resource:
+                  - "arn:aws:secretsmanager:ap-northeast-2:120337556186:secret:my-secret-arn-SI1fML"
+  ECSTaskDefinition:
+    Type: "AWS::ECS::TaskDefinition"
+    Properties:
+      Family: "beat-dev-datadog-agent"
+      NetworkMode: "awsvpc"
+      RequiresCompatibilities:
+        - "FARGATE"
+      Cpu: "256"
+      Memory: "512"
+      ExecutionRoleArn: !GetAtt DatadogTaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt DatadogTaskRole.Arn
+      ContainerDefinitions:
+        - Name: "datadog-agent"
+          Image: "public.ecr.aws/datadog/agent:latest"
+          Environment:
+            - Name: "DD_API_KEY"
+              Value: "febdece4d2ae86e738a35f7109f655a9"
+            - Name: "DD_SITE"
+              Value: "ap1.datadoghq.com"
+            - Name: "DD_APM_ENABLED"
+              Value: "false"
+            - Name: "ECS_FARGATE"
+              Value: "true"
+        - Name: "datadog-log-router"
+          Image: "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable"
+          Essential: true
+          FirelensConfiguration:
+            Type: "fluentbit"
+            Options:
+              enable-ecs-log-metadata: "true"
+          LogConfiguration:
+            LogDriver: "awslogs"
+            Options:
+              awslogs-group: "/ecs/beat-dev-firelens"
+              awslogs-region: "ap-northeast-2"
+              awslogs-stream-prefix: "firelens"
+        - Name: "beat-dev-web"
+          Image: "120337556186.dkr.ecr.ap-northeast-2.amazonaws.com/beat-dev-web:latest"
+          LogConfiguration:
+            LogDriver: "awsfirelens"
+            Options:
+              Host: "http-intake.logs.ap1.datadoghq.com"
+              TLS: "on"
+              apikey: "febdece4d2ae86e738a35f7109f655a9"
+              provider: "ecs"
+              Name: "datadog"
+
+  ECSService:
+    Type: "AWS::ECS::Service"
+    Properties:
+      Cluster: "ecs-integrated-service"
+      TaskDefinition: !Ref ECSTaskDefinition
+      LaunchType: "FARGATE"
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          Subnets:
+            - "subnet-04fb49b388a1511b1"
+            - "subnet-01e7806a890c5f138"
+            - "subnet-06a0dd35bd0f3711f"
+            - "subnet-03a99b16ece87557f"
+          SecurityGroups:
+            - "sg-04d9b186a30550c53"
+          AssignPublicIp: "ENABLED"
+
+

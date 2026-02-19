@@ -40,10 +40,16 @@ variable "azs" {
 }
 
 
-variable "image_tag" {
-  description = "ECR image tag to deploy"
+variable "image_tag_web" {
+  description = "ECR image tag to web"
   type        = string
   default     = "latest"
+}
+
+variable "image_tag_was" {
+  description = "ECR image tag to was"
+  type        = string
+  default     = "new-was"
 }
 
 variable "certificate_arn" {

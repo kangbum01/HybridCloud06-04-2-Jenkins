@@ -49,12 +49,23 @@ module "alb" {
 }
 
 module "ecr" {
-  source              = "../../modules/ecr"
-  ecr_repository_name = "${local.name}-web"
+  source       = "../../modules/ecr"
+  name         = local.name
+  repositories = ["web", "was"]
 }
 
+locals {
+  web_image = "${module.ecr.repo_urls["web"]}:${var.image_tag_web}"
+  was_image = "${module.ecr.repo_urls["was"]}:${var.image_tag_was}"
+}
+
+
+
 module "ecs" {
-  source = "../../modules/ecs"
+  vpc_id              = module.vpc.vpc_id
+  source              = "../../modules/ecs"
+  sd_namespace_name   = "beat-dev.local"
+  was_sd_service_name = "was"
 
   name   = "ecs-integrated"
   region = var.aws_region
@@ -66,12 +77,23 @@ module "ecs" {
   #ALB 모듈 output
   target_group_arn = module.alb.target_group_arn
   alb_arn          = module.alb.alb_arn
-
-  image          = "${module.ecr.repository_url}:${var.image_tag}"
-  container_name = "web"
-  container_port = 8080
+  web_image = local.web_image
+  was_image = local.was_image
+  web_container_name = "web"
+  web_container_port = 8080
+  was_container_name = "was"
+  was_container_port = 80
 
   cpu           = 512
   memory        = 1024
   desired_count = 2
+
+  web_min_capacity = 2
+  web_max_capacity = 4
+
+  was_desired_count = 2
+  was_min_capacity  = 2
+  was_max_capacity  = 4
+  was_cpu_target    = 50
+  was_mem_target    = 70
 }

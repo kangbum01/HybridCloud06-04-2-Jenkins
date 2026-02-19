@@ -1,15 +1,14 @@
+# app/main.py
 from __future__ import annotations
 
 from typing import Optional
-import os
 import uuid
 from fastapi import FastAPI, UploadFile, File, Header, HTTPException
-from fastapi.responses import JSONResponse
 from .config import settings
 from .store import store
-from .ai_client import request_analysis
+from .s3_client import upload_fileobj_to_s3, presign_get
 
-app = FastAPI(title="beat-dev-api", version="0.1.0")
+app = FastAPI(title="beat-dev-api", version="0.2.0")
 
 @app.get("/api/health")
 def health():
@@ -17,40 +16,66 @@ def health():
 
 @app.post("/api/jobs")
 async def create_job(file: UploadFile = File(...)):
-  # 업로드 저장
-  os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-
   job_id = str(uuid.uuid4())
-  store.create(job_id)
-  store.update_status(job_id, "RUNNING")
 
-  save_path = os.path.join(settings.UPLOAD_DIR, f"{job_id}_{file.filename}")
+  # S3 업로드 key 설계: uploads/{job_id}/{원본파일명}
+  filename = file.filename or "upload.bin"
+  s3_key = f"{settings.S3_UPLOAD_PREFIX}/{job_id}/{filename}"
+
+  # 임시 store(나중에 DB로 교체될 자리)
+  store.create(job_id, upload_s3_key=s3_key)
+
   try:
-      contents = await file.read()
-      with open(save_path, "wb") as f:
-         f.write(contents)
+      # UploadFile.file 은 SpooledTemporaryFile이라 스트리밍 업로드 가능
+      upload_fileobj_to_s3(file.file, key=s3_key, content_type=file.content_type)
 
-      await request_analysis(job_id=job_id, file_path=save_path)
+      # 업로드 완료 상태로 저장 (AI가 DB 보고 처리할 것)
+      store.update_status(job_id, "UPLOADED")
 
-      return {"job_id": job_id, "status": "RUNNING"}
-  
+      return {"job_id": job_id, "status": "UPLOADED", "upload_s3_key": s3_key}
+
   except Exception as e:
-     store.update_status(job_id, "FAIL", error=str(e))
-     raise HTTPException(status_code=500, detail=f"failed to create job: {e}")
-  
+      store.update_status(job_id, "FAIL", error=str(e))
+      raise HTTPException(status_code=500, detail=f"failed to upload to S3: {e}")
+
+@app.get("/api/jobs/{job_id}")
+def get_job(job_id: str):
+   job = store.get(job_id)
+   if not job:
+      raise HTTPException(status_code=404, detail="job not found")
+   return store.to_dict(job)
+
+@app.get("/api/jobs/{job_id}/results")
+def get_results(job_id: str):
+    job = store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="job not found")
+
+    if job.status != "DONE":
+        raise HTTPException(status_code=409, detail=f"job not ready (status={job.status})")
+
+    urls = {}
+    if job.result_json_key:
+        urls["json"] = presign_get(job.result_json_key)
+    if job.result_html_key:
+        urls["html"] = presign_get(job.result_html_key)
+    if job.result_mp4_key:
+        urls["mp4"] = presign_get(job.result_mp4_key)
+
+    return {"job_id": job.job_id, "status": job.status, "urls": urls}
+
+# (선택) 콜백은 “테스트용”으로만 남겨도 됨
 @app.post("/api/internal/callback")
 async def callback(
   payload: dict,
   x_callback_token: Optional[str] = Header(default=None, alias="X-CALLBACK-TOKEN")
 ):
-  # 이곳은 오류 내용들 입니다.
   if x_callback_token != settings.CALLBACK_TOKEN:
      raise HTTPException(status_code=401, detail="invalid callback token")
 
   job_id = payload.get("job_id")
   status = payload.get("status")
-  result = payload.get("result")
-  error = payload.get("error")
+  result = payload.get("result") or {}
 
   if not job_id or not status:
       raise HTTPException(status_code=400, detail="job_id and status are required")
@@ -62,12 +87,12 @@ async def callback(
   if status not in ("DONE", "FAIL"):
       raise HTTPException(status_code=400, detail="status must be DONE or FAIL")
 
-  store.update_status(job_id, status, result=result, error=error)
+  store.update_status(
+      job_id,
+      status,
+      result_json_key=result.get("json_key"),
+      result_html_key=result.get("html_key"),
+      result_mp4_key=result.get("mp4_key"),
+      error=payload.get("error"),
+  )
   return {"ok": True}
-
-@app.get("/api/jobs/{job_id}")
-def get_job(job_id: str):
-   job = store.get(job_id)
-   if not job:
-      raise HTTPException(status_code=404, detail="job not found")
-   return store.to_dict(job)
