@@ -56,3 +56,9 @@ variable "certificate_arn" {
   type        = string
   description = "Existing ACM certificate ARN"
 }
+
+variable "s3_bucket" {
+  type        = string
+  description = "Existing S3 bucket name for uploads/results"
+}
+

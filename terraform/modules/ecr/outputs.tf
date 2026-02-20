@@ -1,11 +1,7 @@
-# modules/ecr/outputs.tf
-
-output "repository_urls" {
-  description = "ECR repository URLs by key (e.g., web/was)"
-  value       = { for k, r in aws_ecr_repository.this : k => r.repository_url }
+output "web_repository_url" {
+  value = aws_ecr_repository.web.repository_url
 }
 
-output "repository_names" {
-  description = "ECR repository names by key (e.g., web/was)"
-  value       = { for k, r in aws_ecr_repository.this : k => r.name }
+output "was_repository_url" {
+  value = aws_ecr_repository.was.repository_url
 }

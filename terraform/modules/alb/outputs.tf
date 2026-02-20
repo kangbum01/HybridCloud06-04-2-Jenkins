@@ -8,8 +8,15 @@ output "alb_dns_name" {
 }
 
 output "target_group_arn" {
-  value = aws_lb_target_group.tg.arn
+  description = "web target group arn"
+  value = aws_lb_target_group.tg_web.arn
 }
+
+output "target_group_arn_was" {
+  description = "was target group arn"
+  value = aws_lb_target_group.tg_was.arn
+}
+
 
 output "listener_arn" {
   value = aws_lb_listener.http.arn

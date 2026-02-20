@@ -47,6 +47,47 @@ resource "aws_iam_role_policy_attachment" "task_execution_attach" {
   policy_arn  = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+# ✅ [추가] Task Role (앱이 AWS API 호출할 때: S3 등)
+resource "aws_iam_role" "task_role" {
+  name               = "${var.name}-ecsTaskRole"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_assume_role.json
+}
+
+# ✅ [추가] S3 접근 정책 (uploads/results)
+resource "aws_iam_policy" "task_s3_policy" {
+  name = "${var.name}-task-s3"
+
+  policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Effect = "Allow",
+        Action = ["s3:PutObject","s3:AbortMultipartUpload"],
+        Resource = ["arn:aws:s3:::${var.s3_bucket}/uploads/*"]
+      },
+      {
+        Effect = "Allow",
+        Action = ["s3:GetObject"],
+        Resource = [
+          "arn:aws:s3:::${var.s3_bucket}/uploads/*",
+          "arn:aws:s3:::${var.s3_bucket}/results/*"
+        ]
+      },
+      {
+        Effect = "Allow",
+        Action = ["s3:ListBucket"],
+        Resource = ["arn:aws:s3:::${var.s3_bucket}"],
+        Condition = { StringLike = { "s3:prefix" = ["uploads/*","results/*"] } }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "task_s3_attach" {
+  role       = aws_iam_role.task_role.name
+  policy_arn = aws_iam_policy.task_s3_policy.arn
+}
+
 # 4. ECS Tasks 정의
 # local 구성
 locals {
@@ -149,6 +190,7 @@ resource "aws_ecs_task_definition" "ecs_definition_was" {
   memory            = tostring(var.memory)
 
   execution_role_arn = aws_iam_role.task_execution.arn
+  task_role_arn      = aws_iam_role.task_role.arn
 
   container_definitions = local.was_container_definitions 
 }
@@ -168,6 +210,7 @@ resource "aws_ecs_service" "ecs_service" {
     assign_public_ip = false
   }
 
+# web 서버
   load_balancer {
     target_group_arn = var.target_group_arn
     container_name   = var.web_container_name
@@ -175,6 +218,7 @@ resource "aws_ecs_service" "ecs_service" {
   }
 }
 
+# was 서버
 resource "aws_ecs_service" "ecs_service_was" {
   name        = "${var.name}-was-service"
   cluster     = aws_ecs_cluster.ecs_cluster.id
@@ -193,6 +237,11 @@ resource "aws_ecs_service" "ecs_service_was" {
     registry_arn = aws_service_discovery_service.sd_was.arn
   }
   
+  load_balancer {
+    target_group_arn = var.was_target_group_arn
+    container_name   = var.was_container_name
+    container_port   = var.was_container_port
+  }
 }
 
 # web/was 둘 다 같은 SG를 사용하고 있기 때문에 자기 자신 SG를 열어줘야 한다

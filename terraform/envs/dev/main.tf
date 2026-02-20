@@ -42,24 +42,23 @@ module "alb" {
   public_subnet_ids = module.vpc.public_subnet_ids
 
   # sg/tg/listner 기준 값들
-  target_port       = 8080
-  health_check_path = "/"
+  #  target_port       = 8080
+  #  health_check_path = "/"
 
   acm_certificate_arn = var.certificate_arn
+  web_target_port     = 8080
+  was_target_port     = 8080
 }
 
 module "ecr" {
-  source       = "../../modules/ecr"
-  name         = local.name
-  repositories = ["web", "was"]
+  source = "../../modules/ecr"
+  name   = local.name
 }
 
 locals {
-  web_image = "${module.ecr.repo_urls["web"]}:${var.image_tag_web}"
-  was_image = "${module.ecr.repo_urls["was"]}:${var.image_tag_was}"
+  web_image = "${module.ecr.web_repository_url}:${var.image_tag_web}"
+  was_image = "${module.ecr.was_repository_url}:${var.image_tag_was}"
 }
-
-
 
 module "ecs" {
   vpc_id              = module.vpc.vpc_id
@@ -67,22 +66,24 @@ module "ecs" {
   sd_namespace_name   = "beat-dev.local"
   was_sd_service_name = "was"
 
-  name   = "ecs-integrated"
-  region = var.aws_region
+  s3_bucket = var.s3_bucket
+  name      = "ecs-integrated"
+  region    = var.aws_region
 
   private_subnet_ids = module.vpc.private_subnet_ids
 
   ecs_service_sg_id = module.alb.ecs_sg_id
 
   #ALB 모듈 output
-  target_group_arn = module.alb.target_group_arn
-  alb_arn          = module.alb.alb_arn
-  web_image = local.web_image
-  was_image = local.was_image
-  web_container_name = "web"
-  web_container_port = 8080
-  was_container_name = "was"
-  was_container_port = 80
+  target_group_arn     = module.alb.target_group_arn
+  was_target_group_arn = module.alb.target_group_arn_was
+  alb_arn              = module.alb.alb_arn
+  web_image            = local.web_image
+  was_image            = local.was_image
+  web_container_name   = "web"
+  web_container_port   = 8080
+  was_container_name   = "was"
+  was_container_port   = 8080
 
   cpu           = 512
   memory        = 1024
@@ -97,3 +98,4 @@ module "ecs" {
   was_cpu_target    = 50
   was_mem_target    = 70
 }
+

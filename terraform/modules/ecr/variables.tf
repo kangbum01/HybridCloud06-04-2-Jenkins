@@ -1,5 +1,4 @@
-variable "repositories" {
-  type = set(string)
-  default = ["web", "was"]
+variable "name" {
+  description = "ecr name "
+  type = string
 }
-variable "name" { type = string }

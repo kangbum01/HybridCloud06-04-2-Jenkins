@@ -27,9 +27,14 @@ variable "alb_listener_port_https" {
 }
 
 
-variable "target_port" {
+variable "was_target_port" {
   type    = number
   default = 8080
+}
+
+variable "web_target_port" {
+  type    = number
+  default = 80
 }
 
 variable "ecs_alb_port" {

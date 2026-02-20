@@ -25,10 +25,6 @@ variable "was_image" {
   type = string
 }
 
-variable "was_container_name" {
-  description = "ECS Container Name - was"
-  type = string
-}
 
 variable "web_container_name" {
   description = "ECS Container Name - web"
@@ -36,12 +32,17 @@ variable "web_container_name" {
 }
 
 variable "web_container_port"{
-  description = "ECS Task container port - web(8080)"
+  description = "ECS Task container port - web(80)"
   type = number
 }
 
+variable "was_container_name" {
+  description = "ECS Container Name - was"
+  type = string
+}
+
 variable "was_container_port"{
-  description = "ECS Task container port - was(80)"
+  description = "ECS Task container port - was(8080)"
   type = number
 }
 
@@ -92,9 +93,6 @@ variable "web_min_capacity" {
   type = number
 }
 
-
-
-
 variable "private_subnet_ids" {
   description = "private subnets"
   type = list(string)
@@ -107,6 +105,10 @@ variable "ecs_service_sg_id" {
 
 variable "target_group_arn" {
   description = "ALB Target Group ARN to attach the ECS service"
+  type = string
+}
+
+variable "was_target_group_arn" {
   type = string
 }
 
@@ -125,5 +127,9 @@ variable "vpc_id" {
 }
 
 variable "was_sd_service_name" {
+  type = string
+}
+
+variable "s3_bucket" {
   type = string
 }

@@ -51,11 +51,21 @@ resource "aws_security_group" "ecs_sg" {
   tags = { Name = "${var.name}-ecs-sg" }
 }
 
-resource "aws_vpc_security_group_ingress_rule" "ecs_in_from_alb" {
+# WEB port (예: 80)
+resource "aws_vpc_security_group_ingress_rule" "ecs_in_web_from_alb" {
   security_group_id            = aws_security_group.ecs_sg.id
   referenced_security_group_id = aws_security_group.alb_sg.id
-  from_port                    = var.ecs_alb_port
-  to_port                      = var.ecs_alb_port
+  from_port                    = var.web_target_port
+  to_port                      = var.web_target_port
+  ip_protocol                  = "tcp"
+}
+
+# WAS port (예: 8080)
+resource "aws_vpc_security_group_ingress_rule" "ecs_in_was_from_alb" {
+  security_group_id            = aws_security_group.ecs_sg.id
+  referenced_security_group_id = aws_security_group.alb_sg.id
+  from_port                    = var.was_target_port      # 보통 8080
+  to_port                      = var.was_target_port
   ip_protocol                  = "tcp"
 }
 
@@ -68,20 +78,32 @@ resource "aws_vpc_security_group_egress_rule" "ecs_out_all" {
 
 
 # 2. TG 생성
-# * TG
-resource "aws_lb_target_group" "tg" {
-  name        = "${var.name}-tg"
-  port        = var.target_port
+# * TG - web
+resource "aws_lb_target_group" "tg_web" {
+  name        = "${var.name}-tg-web"
+  port        = var.web_target_port
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
   target_type = "ip"
 
   health_check {
-    path    = var.health_check_path
+    path    = var.health_check_path # "/"
     matcher = "200-399"
   }
+}
 
-  tags = { Name = "${var.name}-tg" }
+# * TG - was
+resource "aws_lb_target_group" "tg_was" {
+  name      = "${var.name}-tg-was"
+  port      = var.was_target_port
+  protocol  = "HTTP"
+  vpc_id    = var.vpc_id
+  target_type = "ip"
+
+  health_check {
+    path = "/api/health"
+    matcher = "200-399"
+  }
 }
 
 # 3. ALB 생성 및 연결
@@ -98,7 +120,7 @@ resource "aws_lb" "alb" {
 
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.alb.arn
-  port              = var.alb_listener_port
+  port              = var.alb_listener_port # 80
   protocol          = "HTTP"
 
   default_action {
@@ -116,14 +138,33 @@ resource "aws_lb_listener" "http" {
   }
 }
 
+# HTTPS default -> WEB
 resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.alb.arn
-  port              = var.alb_listener_port_https
+  port              = var.alb_listener_port_https # 433
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-Res-PQ-2025-09"
   certificate_arn   = var.acm_certificate_arn
   default_action {
     type          = "forward"
-    target_group_arn = aws_lb_target_group.tg.arn
+    target_group_arn = aws_lb_target_group.tg_web.arn
+  }
+}
+
+
+# /api/* -> was
+resource "aws_lb_listener_rule" "api_to_was" {
+  listener_arn = aws_lb_listener.https.arn
+  priority      = 10
+
+  condition {
+    path_pattern {
+      values = ["/api/*"] 
+    }
+  }
+
+  action {
+    type        = "forward"
+    target_group_arn = aws_lb_target_group.tg_was.arn
   }
 }
