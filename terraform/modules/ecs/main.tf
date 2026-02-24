@@ -129,6 +129,18 @@ locals {
         containerPort = var.was_container_port
         protocol      = "tcp"
       }]
+      
+      environment = [
+      { name = "DB_HOST", value = var.db_host },
+      { name = "DB_PORT", value = tostring(var.db_port) },
+      { name = "DB_NAME", value = var.db_name },
+      { name = "DB_USER", value = var.db_user },
+      { name = "DB_PASS", value = var.db_pass },
+
+      # (선택) S3도 같이 넣고 싶으면
+      # { name = "S3_BUCKET", value = var.s3_bucket },
+      # { name = "AWS_REGION", value = var.region }
+    ]
       logConfiguration = {
         logDriver = "awslogs"
         options = {

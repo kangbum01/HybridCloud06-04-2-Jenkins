@@ -62,3 +62,32 @@ variable "s3_bucket" {
   description = "Existing S3 bucket name for uploads/results"
 }
 
+#######################################
+####### DB에 대한 정보 추가하기 #######
+#######################################
+variable "db_host" {
+  type    = string
+  default = "10.0.1.85"
+}
+
+variable "db_port" {
+  type    = number
+  default = 3308
+}
+
+variable "db_name" {
+  type    = string
+  default = "appdb"
+}
+
+variable "db_user" {
+  type    = string
+  default = "admin"
+}
+
+variable "db_pass" {
+  type    = string
+  default = "Admin123!"
+}
+
+

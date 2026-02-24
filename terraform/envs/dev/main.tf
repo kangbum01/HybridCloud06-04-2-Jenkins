@@ -66,6 +66,12 @@ module "ecs" {
   sd_namespace_name   = "beat-dev.local"
   was_sd_service_name = "was"
 
+  db_host = var.db_host
+  db_port = var.db_port
+  db_name = var.db_name
+  db_user = var.db_user
+  db_pass = var.db_pass
+
   s3_bucket = var.s3_bucket
   name      = "ecs-integrated"
   region    = var.aws_region
@@ -98,4 +104,68 @@ module "ecs" {
   was_cpu_target    = 50
   was_mem_target    = 70
 }
+
+# SQS (Job / Result + DLQ )
+
+# DLQ - Job
+resource "aws_sqs_queue" "job_dlq" {
+  name                      = "${local.name}-job-dlq"
+  message_retention_seconds = 1209600 # 14 days
+  kms_master_key_id         = "alias/aws/sqs"
+}
+
+# DLQ - Result
+resource "aws_sqs_queue" "result_dlq" {
+  name                      = "${local.name}-result-dlq"
+  message_retention_seconds = 1209600
+  kms_master_key_id         = "alias/aws/sqs"
+}
+
+# Job Queue
+resource "aws_sqs_queue" "job_queue" {
+  name                       = "${local.name}-job-queue"
+  receive_wait_time_seconds  = 20
+  visibility_timeout_seconds = 300
+  message_retention_seconds  = 345600
+  kms_master_key_id          = "alias/aws/sqs"
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.job_dlq.arn
+    maxReceiveCount     = 5
+  })
+}
+
+# Result Queue
+resource "aws_sqs_queue" "result_queue" {
+  name                       = "${local.name}-result-queue"
+  receive_wait_time_seconds  = 20
+  visibility_timeout_seconds = 60
+  message_retention_seconds  = 345600
+  kms_master_key_id          = "alias/aws/sqs"
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.result_dlq.arn
+    maxReceiveCount     = 5
+  })
+}
+
+############################
+# Outputs (Queue URL)
+############################
+output "job_queue_url" {
+  value = aws_sqs_queue.job_queue.url
+}
+
+output "result_queue_url" {
+  value = aws_sqs_queue.result_queue.url
+}
+
+output "job_dlq_url" {
+  value = aws_sqs_queue.job_dlq.url
+}
+
+output "result_dlq_url" {
+  value = aws_sqs_queue.result_dlq.url
+}
+
 
