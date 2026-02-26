@@ -89,7 +89,7 @@ resource "aws_iam_role_policy_attachment" "task_s3_attach" {
 }
 
 # 4. ECS Tasks 정의
-# local 구성
+# web 구성
 locals {
   web_container_definitions = jsonencode([
     {

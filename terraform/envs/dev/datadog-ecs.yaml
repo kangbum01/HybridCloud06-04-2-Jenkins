@@ -1,4 +1,53 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "Beat-dev ECS Fargate + Datadog Agent + FireLens (secure & reusable)"
+
+Parameters:
+  ClusterName:
+    Type: String
+    Description: "Existing ECS Cluster name or ARN"
+
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+
+  SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+
+  AssignPublicIp:
+    Type: String
+    AllowedValues: ["ENABLED", "DISABLED"]
+    Default: "DISABLED"
+
+  DesiredCount:
+    Type: Number
+    Default: 1
+
+  AppImage:
+    Type: String
+    Description: "ECR image URI for beat-dev-web"
+
+  AppContainerPort:
+    Type: Number
+    Default: 80
+
+  DatadogSite:
+    Type: String
+    Default: "ap1.datadoghq.com"
+
+  DatadogApiKeySecretArn:
+    Type: String
+    Description: "Secrets Manager ARN that stores Datadog API key"
+
+  FirelensLogGroupName:
+    Type: String
+    Default: "/ecs/beat-dev-firelens"
+
 Resources:
+  FirelensLogGroup:
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: !Ref FirelensLogGroupName
+      RetentionInDays: 14
+
   DatadogTaskRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -8,22 +57,21 @@ Resources:
         Statement:
           - Effect: "Allow"
             Principal:
-              Service:
-                - "ecs-tasks.amazonaws.com"
-            Action:
-              - "sts:AssumeRole"
+              Service: ["ecs-tasks.amazonaws.com"]
+            Action: ["sts:AssumeRole"]
       Policies:
-        - PolicyName: "fargate-task-role-default-policy"
+        - PolicyName: "datadog-task-role-minimum"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              # (선택) 필요 시만 남겨. 보통 Fargate agent는 ECS metadata로도 충분한 경우가 많아.
               - Effect: "Allow"
                 Action:
                   - "ecs:ListClusters"
-                  - "ecs:ListContainerInstances"
-                  - "ecs:DescribeContainerInstances"
-                Resource:
-                  - "*"
+                  - "ecs:DescribeTasks"
+                  - "ecs:ListTasks"
+                Resource: "*"
+
   DatadogTaskExecutionRole:
     Type: "AWS::IAM::Role"
     Properties:
@@ -33,44 +81,46 @@ Resources:
         Statement:
           - Effect: "Allow"
             Principal:
-              Service:
-                - "ecs-tasks.amazonaws.com"
-            Action:
-              - "sts:AssumeRole"
-      Path: "/"
+              Service: ["ecs-tasks.amazonaws.com"]
+            Action: ["sts:AssumeRole"]
+      ManagedPolicyArns:
+        # ECR pull + CloudWatch logs 등 실행에 필요한 표준 권한
+        - "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
       Policies:
         - PolicyName: "datadog-secret-access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: "Allow"
-                Action:
-                  - "secretsmanager:GetSecretValue"
-                Resource:
-                  - "arn:aws:secretsmanager:ap-northeast-2:120337556186:secret:my-secret-arn-SI1fML"
+                Action: ["secretsmanager:GetSecretValue"]
+                Resource: [!Ref DatadogApiKeySecretArn]
+
   ECSTaskDefinition:
     Type: "AWS::ECS::TaskDefinition"
     Properties:
-      Family: "beat-dev-datadog-agent"
+      Family: "beat-dev-web-with-datadog"
       NetworkMode: "awsvpc"
-      RequiresCompatibilities:
-        - "FARGATE"
-      Cpu: "256"
-      Memory: "512"
+      RequiresCompatibilities: ["FARGATE"]
+      Cpu: "512"
+      Memory: "1024"
       ExecutionRoleArn: !GetAtt DatadogTaskExecutionRole.Arn
       TaskRoleArn: !GetAtt DatadogTaskRole.Arn
+
       ContainerDefinitions:
         - Name: "datadog-agent"
           Image: "public.ecr.aws/datadog/agent:latest"
+          Essential: false
           Environment:
-            - Name: "DD_API_KEY"
-              Value: "febdece4d2ae86e738a35f7109f655a9"
             - Name: "DD_SITE"
-              Value: "ap1.datadoghq.com"
-            - Name: "DD_APM_ENABLED"
-              Value: "false"
+              Value: !Ref DatadogSite
             - Name: "ECS_FARGATE"
               Value: "true"
+            - Name: "DD_APM_ENABLED"
+              Value: "false"
+          Secrets:
+            - Name: "DD_API_KEY"
+              ValueFrom: !Ref DatadogApiKeySecretArn
+
         - Name: "datadog-log-router"
           Image: "public.ecr.aws/aws-observability/aws-for-fluent-bit:stable"
           Essential: true
@@ -81,35 +131,42 @@ Resources:
           LogConfiguration:
             LogDriver: "awslogs"
             Options:
-              awslogs-group: "/ecs/beat-dev-firelens"
-              awslogs-region: "ap-northeast-2"
+              awslogs-group: !Ref FirelensLogGroupName
+              awslogs-region: !Ref "AWS::Region"
               awslogs-stream-prefix: "firelens"
+
         - Name: "beat-dev-web"
-          Image: "120337556186.dkr.ecr.ap-northeast-2.amazonaws.com/beat-dev-web:latest"
+          Image: !Ref AppImage
+          Essential: true
+          PortMappings:
+            - ContainerPort: !Ref AppContainerPort
+              Protocol: "tcp"
+          DependsOn:
+            - ContainerName: "datadog-log-router"
+              Condition: "START"
           LogConfiguration:
             LogDriver: "awsfirelens"
             Options:
-              Host: "http-intake.logs.ap1.datadoghq.com"
-              TLS: "on"
-              apikey: "febdece4d2ae86e738a35f7109f655a9"
-              provider: "ecs"
               Name: "datadog"
+              Host: !Sub "http-intake.logs.${DatadogSite}"
+              TLS: "on"
+              provider: "ecs"
+              dd_service: "beat-dev-web"
+              dd_source: "ecs"
+              dd_tags: "env:dev,project:beat"
+            SecretOptions:
+              - Name: "apikey"
+                ValueFrom: !Ref DatadogApiKeySecretArn
 
   ECSService:
     Type: "AWS::ECS::Service"
     Properties:
-      Cluster: "ecs-integrated-service"
+      Cluster: !Ref ClusterName
       TaskDefinition: !Ref ECSTaskDefinition
       LaunchType: "FARGATE"
+      DesiredCount: !Ref DesiredCount
       NetworkConfiguration:
         AwsvpcConfiguration:
-          Subnets:
-            - "subnet-04fb49b388a1511b1"
-            - "subnet-01e7806a890c5f138"
-            - "subnet-06a0dd35bd0f3711f"
-            - "subnet-03a99b16ece87557f"
-          SecurityGroups:
-            - "sg-04d9b186a30550c53"
-          AssignPublicIp: "ENABLED"
-
-
+          Subnets: !Ref SubnetIds
+          SecurityGroups: [!Ref SecurityGroupId]
+          AssignPublicIp: !Ref AssignPublicIp
