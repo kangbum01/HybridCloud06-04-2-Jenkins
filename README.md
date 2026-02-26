@@ -4,7 +4,7 @@
 > **하이브리드(AWS + 온프레) 비동기 처리 아키텍처**입니다.
 
 <p align="center">
-  <img src="./docs/architecture.png" alt="Architecture" width="820" />
+  <img src="./doc/architecture.png" alt="Architecture" width="820" />
 </p>
 
 <p align="center">
