@@ -688,3 +688,4 @@ mysqladmin -u root -p flush-hosts
 ## 조원
 ### AI 서버 - https://github.com/JAYUN-KIM/AI_analyze
 ### DB 서버 - https://github.com/lhy30919/terra111
+### WEB 서버 - https://github.com/kangbum01/HybridCloud06-04-2-Web
