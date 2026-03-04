@@ -684,3 +684,7 @@ mysqladmin -u root -p flush-hosts
 
 - 연결 폭주/재시도 줄이기(consumer 재시도, `desired_count` 조정)
 </details>
+
+## 조원
+### AI 서버 - https://github.com/JAYUN-KIM/AI_analyze
+### DB 서버 - https://github.com/lhy30919/terra111
