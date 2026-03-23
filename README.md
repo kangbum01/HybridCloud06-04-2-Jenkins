@@ -37,7 +37,7 @@
 - **Web**(정적 페이지)에서 음악 업로드
 - **WAS(FastAPI, ECS)** 가 **S3 업로드 + DB jobs 생성 + SQS Job 발행**
 - **AI(온프레)** 가 **SQS Job 소비 → 분석 → S3 결과 업로드 → SQS Result 발행**
-- **WAS Result Consumer** 가 **SQS Result 소비 → DB jobs 업데이트(DONE/FAIL)**
+- **WAS Result Consumer(분리 되지 않은 WAS)** 가 **SQS Result 소비 → DB jobs 업데이트(DONE/FAIL)**
 - **Web**은 `/api/jobs/{id}` & `/api/jobs/{id}/results` 로 **상태/결과 URL(프리사인)** 을 받아 화면을 갱신
 
 ---
